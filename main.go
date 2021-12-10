@@ -63,26 +63,37 @@ var (
 	)
 )
 
-func retrieveMetrics(p services.SolarStatusProvider) (err error) {
+func retrieveMetrics(p services.SolarStatusProvider) error {
 	Site := p.Site()
+
+	log.Printf("%s - Start retrieving status.\n", Site)
 	status, err := p.GetSolarStatus()
+	dayRecord.Reset()
 	if err != nil {
-		return
+		return err
 	}
+	log.Printf("%s - Successfully retrieved status.\n", Site)
+
 	powerNow.WithLabelValues(Site).Set(status.PowerNow)
 	energyToday.WithLabelValues(Site).Set(status.EnergyToday)
 	energyTotal.WithLabelValues(Site).Set(status.EnergyTotal)
 
+	log.Printf("%s - Synchronizing values with database.\n", Site)
 	models.SaveTodayValue(status.EnergyToday)
 	monthTotal := models.GetMonthTotal()
+	if status.EnergyMonth > monthTotal {
+		monthTotal = status.EnergyMonth
+	}
 	energyMonth.WithLabelValues(Site).Set(monthTotal)
 	yearTotal := models.GetYearTotal()
+	if status.EnergyMonth > yearTotal {
+		yearTotal = status.EnergyYear
+	}
 	energyYear.WithLabelValues(Site).Set(yearTotal)
-
 	record_date, value := models.GetDayRecord()
-	dayRecord.Reset()
 	dayRecord.WithLabelValues(Site, record_date).Set(value)
-	return
+	log.Printf("%s - Synchronized with database.\n", Site)
+	return nil
 }
 
 func recordMetrics(p services.SolarStatusProvider) {

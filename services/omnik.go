@@ -112,12 +112,16 @@ func (p *OmnikProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	if err != nil {
 		return nil, err
 	}
+	energyYear, err := convertRawToFloatWatt(d.Yearpower)
+	if err != nil {
+		energyYear = 0
+	}
 	energyTotal, err := convertRawToFloatWatt(d.Allpower)
 	if err != nil {
 		return nil, err
 	}
 
-	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyTotal: energyTotal, PowerNow: powerNow}
+	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyYear: energyYear, EnergyTotal: energyTotal, PowerNow: powerNow}
 	return &status, nil
 }
 
@@ -138,7 +142,7 @@ func convertRawToFloatWatt(raw string) (float64, error) {
 
 	value, err := strconv.ParseFloat(valueString, 64)
 	if err != nil {
-		return -1.0, fmt.Errorf("could not convert %s to float: %s\n", value, err)
+		return -1.0, fmt.Errorf("could not convert [%s] to float: %s", raw, err)
 	}
 	return value * multiplier, err
 }

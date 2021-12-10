@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
 
@@ -31,8 +30,6 @@ func NewSolarEdgeProvider(site, api_key, pid string, timeout int) *SolarEdgeProv
 }
 
 func (p *SolarEdgeProvider) GetSolarStatus() (*models.SolarStatus, error) {
-	log.Printf("%s - Start retrieving status.\n", p.site)
-
 	url := fmt.Sprintf("https://monitoringapi.solaredge.com/site/%s/overview?api_key=%s", p.pid, p.api_key)
 	client := &http.Client{
 		Timeout: 15 * time.Second,
@@ -93,8 +90,8 @@ func (p *SolarEdgeProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	powerNow := d.CurrentPower.Power
 	energyToday := d.LastDayData.Energy
 	energyMonth := d.LastMonthData.Energy
+	energyYear := d.LastYearData.Energy
 	energyTotal := d.LifeTimeData.Energy
-	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyTotal: energyTotal, PowerNow: powerNow}
-	log.Printf("%s - Successfully retrieved status.\n", p.site)
+	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyYear: energyYear, EnergyTotal: energyTotal, PowerNow: powerNow}
 	return &status, nil
 }

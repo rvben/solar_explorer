@@ -90,7 +90,6 @@ func (p *SemsProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("%s - Start retrieving status.\n", p.site)
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -155,6 +154,5 @@ func (p *SemsProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	energyTotal := d.Inverter[0].Etotal * 1000 // Etotal is in kW
 	powerNow := d.Inverter[0].OutPac           // OutPac is in W
 	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyTotal: energyTotal, PowerNow: powerNow}
-	log.Printf("%s - Successfully retrieved status.\n", p.site)
 	return &status, nil
 }
