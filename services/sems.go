@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -20,40 +20,46 @@ type SemsProvider struct {
 	token    string
 	cookie   string
 	site     string
+	timeout  int
 }
 
 func (p *SemsProvider) Site() string {
 	return p.site
 }
 
-func NewSemsProvider(site, user, password string) *SemsProvider {
-	token, cookie := login(user, password)
-	return &SemsProvider{site: site, user: user, password: password, token: token, cookie: cookie}
+func (p *SemsProvider) Timeout() int {
+	return p.timeout
 }
 
-func login(user, password string) (token string, cookie string) {
-	log.Printf("Logging in as user [%s]", user)
-	endpoint := "https://www.semsportal.com/Home/Login"
-	data := url.Values{}
-	data.Set("account", user)
-	data.Set("pwd", password)
+func NewSemsProvider(site, user, password string, timeout int) *SemsProvider {
+	return &SemsProvider{site: site, user: user, password: password, timeout: timeout}
+}
+
+func (p *SemsProvider) login() error {
+	var cookie, token string
+
+	log.Printf("Logging in as user [%s]", p.user)
+	url := "https://www.semsportal.com/Home/Login"
+	data := neturl.Values{}
+	data.Set("account", p.user)
+	data.Set("pwd", p.password)
 
 	client := &http.Client{}
-	r, err := http.NewRequest("POST", endpoint, strings.NewReader(data.Encode()))
+	r, err := http.NewRequest("POST", url, strings.NewReader(data.Encode()))
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("could not create request for url [%s]: %s", url, err)
 	}
 	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
 
 	res, err := client.Do(r)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("could succesfully finish request [%s]: %s", url, err)
 	}
 	defer res.Body.Close()
 	bodyBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to read body from request: %s", err)
 	}
 	for _, c := range res.Cookies() {
 		if c.Name == "ASP.NET_SessionId" {
@@ -71,31 +77,31 @@ func login(user, password string) (token string, cookie string) {
 	split := strings.Split(response.Data.Redirect, "/")
 	token = split[len(split)-1]
 	if response.Code != 0 {
-		log.Fatalf("Failed to log in as user [%s]", user)
+		return fmt.Errorf("failed to log in as user [%s]", p.user)
 	}
-	log.Printf("Succesfully logged in as user [%s]", user)
-	return token, cookie
-}
-
-func (p *SemsProvider) relogin() {
-	token, cookie := login(p.user, p.password)
+	log.Printf("%s - Succesfully logged in as user [%s]\n", p.site, p.user)
 	p.token = token
 	p.cookie = cookie
+	return nil
 }
 
-func (p *SemsProvider) GetSolarStatus() (models.SolarStatus, error) {
-	p.relogin()
+func (p *SemsProvider) GetSolarStatus() (*models.SolarStatus, error) {
+	err := p.login()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("%s - Start retrieving status.\n", p.site)
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
 
-	endpoint := "https://www.semsportal.com/GopsApi/Post?s=v1/PowerStation/GetMonitorDetailByPowerstationId"
-	data := url.Values{}
+	url := "https://www.semsportal.com/GopsApi/Post?s=v1/PowerStation/GetMonitorDetailByPowerstationId"
+	data := neturl.Values{}
 	data.Set("str", fmt.Sprintf("{\"api\":\"v1/PowerStation/GetMonitorDetailByPowerstationId\",\"param\":{\"powerStationId\":\"%s\"}}", p.token))
 
-	req, err := http.NewRequest("POST", endpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequest("POST", url, strings.NewReader(data.Encode()))
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("could not create request for url [%s]: %s", url, err)
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
@@ -103,16 +109,16 @@ func (p *SemsProvider) GetSolarStatus() (models.SolarStatus, error) {
 
 	res, err := client.Do(req)
 	if err != nil {
-		return models.SolarStatus{}, err
+		return nil, fmt.Errorf("could succesfully finish request [%s]: %s", url, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
-	bodyBytes, readErr := ioutil.ReadAll(res.Body)
-	if readErr != nil {
-		log.Fatal(readErr)
+	bodyBytes, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read body from request: %s", err)
 	}
 
 	rawStatus := struct {
@@ -140,9 +146,8 @@ func (p *SemsProvider) GetSolarStatus() (models.SolarStatus, error) {
 	}{}
 	json.Unmarshal(bodyBytes, &rawStatus)
 	if rawStatus.Code != "0" {
-		log.Fatalf("Failed to retrieve status: %s", rawStatus.Msg)
+		return nil, fmt.Errorf("failed to retrieve status for site [%s]: %s", p.site, rawStatus.Msg)
 	}
-	log.Println("Successfully retrieved status.")
 
 	d := rawStatus.Data
 	energyToday := d.Inverter[0].Eday * 1000   // Eday is in kW
@@ -150,5 +155,6 @@ func (p *SemsProvider) GetSolarStatus() (models.SolarStatus, error) {
 	energyTotal := d.Inverter[0].Etotal * 1000 // Etotal is in kW
 	powerNow := d.Inverter[0].OutPac           // OutPac is in W
 	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyTotal: energyTotal, PowerNow: powerNow}
-	return status, nil
+	log.Printf("%s - Successfully retrieved status.\n", p.site)
+	return &status, nil
 }

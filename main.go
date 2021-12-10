@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rvben/solar_exporter/models"
 	"github.com/rvben/solar_exporter/services"
+	"gopkg.in/yaml.v2"
 )
 
 var ACCOUNT = os.Getenv("SEMS_ACCOUNT")
@@ -84,19 +85,80 @@ func retrieveMetrics(p services.SolarStatusProvider) (err error) {
 	return
 }
 
-func recordMetrics(provider services.SolarStatusProvider) {
+func recordMetrics(p services.SolarStatusProvider) {
 	go func() {
 		for {
-			err := retrieveMetrics(provider)
+			err := retrieveMetrics(p)
 			if err != nil {
-				log.Println("Could not retrieve metrics.")
+				log.Printf("%s - Could not retrieve metrics: %s", p.Site(), err)
 			}
-			time.Sleep(15 * time.Second)
+			time.Sleep(time.Second * time.Duration(p.Timeout()))
 		}
 	}()
 }
 
+type Config struct {
+	Server struct {
+		Port           string `yaml:"port"`
+		DbDir          string `yaml:"db_dir"`
+		DefaultTimeout int    `yaml:"default_timeout"`
+	} `yaml:"server"`
+	SolarEdge []struct {
+		Site    string `yaml:"site"`
+		APIKey  string `yaml:"api_key"`
+		Pid     string `yaml:"pid"`
+		Timeout int    `yaml:"timeout"`
+	} `yaml:"solaredge"`
+	Omnik []struct {
+		Site    string `yaml:"site"`
+		Pid     string `yaml:"pid"`
+		BaseURL string `yaml:"base_url"`
+		Timeout int    `yaml:"timeout"`
+	} `yaml:"omnik"`
+	Sems []struct {
+		Site     string `yaml:"site"`
+		Account  string `yaml:"account"`
+		Password string `yaml:"password"`
+		Timeout  int    `yaml:"timeout"`
+	} `yaml:"sems"`
+}
+
+func NewConfig(configPath string) (*Config, error) {
+	config := &Config{}
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	d := yaml.NewDecoder(file)
+	if err := d.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+func ValidateConfigPath(path string) error {
+	s, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		log.Fatalf("File [%s] does not exist.\n", path)
+	}
+	if err != nil {
+		return err
+	}
+	if s.IsDir() {
+		return fmt.Errorf("'%s' is a directory, not a normal file", path)
+	}
+	return nil
+}
+
 func main() {
+	cfg, err := NewConfig("config.yml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	prometheus.MustRegister(powerNow)
 	prometheus.MustRegister(energyToday)
 	prometheus.MustRegister(energyMonth)
@@ -104,27 +166,58 @@ func main() {
 	prometheus.MustRegister(energyTotal)
 	prometheus.MustRegister(dayRecord)
 
-	databaseDir := "/tmp/data"
-	databaseFile := fmt.Sprintf("%s/%s.db", databaseDir, SITE)
+	databaseDir := cfg.Server.DbDir
 
-	_, err := os.Stat(databaseDir)
+	_, err = os.Stat(databaseDir)
 	if os.IsNotExist(err) {
 		log.Fatalf("Folder [%s] does not exist.\n", databaseDir)
 	}
-	err = models.InitDB(databaseFile)
-	if err != nil {
-		log.Fatal(err)
+
+	var providers []services.SolarStatusProvider
+
+	// Load all providers
+	for _, p := range cfg.Omnik {
+		timeout := p.Timeout
+		if timeout == 0 {
+			timeout = cfg.Server.DefaultTimeout
+		}
+		provider := services.NewOmnikProvider(p.Site, p.BaseURL, p.Pid, timeout)
+		providers = append(providers, provider)
 	}
 
+	for _, p := range cfg.SolarEdge {
+		timeout := p.Timeout
+		if timeout == 0 {
+			timeout = cfg.Server.DefaultTimeout
+		}
+		provider := services.NewSolarEdgeProvider(p.Site, p.APIKey, p.Pid, timeout)
+		providers = append(providers, provider)
+	}
+
+	for _, p := range cfg.Sems {
+		timeout := p.Timeout
+		if timeout == 0 {
+			timeout = cfg.Server.DefaultTimeout
+		}
+		provider := services.NewSemsProvider(p.Site, p.Account, p.Password, timeout)
+		providers = append(providers, provider)
+	}
+
+	for _, p := range providers {
+		databaseFile := fmt.Sprintf("%s/%s.db", databaseDir, p.Site())
+		err = models.InitDB(databaseFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Start Metrics Collection
+	for _, p := range providers {
+		recordMetrics(p)
+	}
+
+	// Start server
 	http.Handle("/metrics", promhttp.Handler())
-
-	PORT, exists := os.LookupEnv("SOLAR_EXP_PORT")
-	if !exists {
-		PORT = "2121"
-	}
-	provider := services.NewSemsProvider(SITE, ACCOUNT, PASSWORD)
-	recordMetrics(provider)
-
-	log.Println(fmt.Sprintf("Starting server at :%s", PORT))
-	http.ListenAndServe(fmt.Sprintf(":%s", PORT), nil)
+	log.Println(fmt.Sprintf("Starting server at :%s", cfg.Server.Port))
+	http.ListenAndServe(fmt.Sprintf(":%s", cfg.Server.Port), nil)
 }

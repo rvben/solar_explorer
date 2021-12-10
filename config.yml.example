@@ -1,0 +1,23 @@
+---
+
+server:
+  port: "2121"
+  db_dir: /data
+
+solaredge:
+  - site: SiteName1
+    api_key: ABC1
+    pid: "1234567"
+  - site: SiteName2
+    api_key: ABC2
+    pid: "2345678"
+
+omnik:
+  - site: SiteName3
+    pid: "12345"
+    base_url: https://www.ginlongmonitoring.com
+
+sems:
+  - site: SiteName4
+    account: hello@world.com
+    password: Example!
