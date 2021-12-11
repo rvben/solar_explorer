@@ -19,6 +19,7 @@ type OmnikProvider struct {
 	base_url string
 	site     string
 	timeout  int
+	db       *models.DataBase
 }
 
 func (p *OmnikProvider) Site() string {
@@ -29,8 +30,12 @@ func (p *OmnikProvider) Timeout() int {
 	return p.timeout
 }
 
-func NewOmnikProvider(site, base_url, pid string, timeout int) *OmnikProvider {
-	return &OmnikProvider{site: site, pid: pid, base_url: base_url, timeout: timeout}
+func (p *OmnikProvider) DB() *models.DataBase {
+	return p.db
+}
+
+func NewOmnikProvider(site, base_url, pid string, timeout int, db *models.DataBase) *OmnikProvider {
+	return &OmnikProvider{site: site, pid: pid, base_url: base_url, timeout: timeout, db: db}
 }
 
 func (p *OmnikProvider) GetSolarStatus() (*models.SolarStatus, error) {

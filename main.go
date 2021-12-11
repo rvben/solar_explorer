@@ -68,29 +68,29 @@ func retrieveMetrics(p services.SolarStatusProvider) error {
 
 	log.Printf("%s - Start retrieving status.\n", Site)
 	status, err := p.GetSolarStatus()
-	dayRecord.Reset()
 	if err != nil {
 		return err
 	}
 	log.Printf("%s - Successfully retrieved status.\n", Site)
-
+	// log.Printf("%s - STATUS:\n%+v\n----------\n", Site, status)
 	powerNow.WithLabelValues(Site).Set(status.PowerNow)
 	energyToday.WithLabelValues(Site).Set(status.EnergyToday)
 	energyTotal.WithLabelValues(Site).Set(status.EnergyTotal)
 
 	log.Printf("%s - Synchronizing values with database.\n", Site)
-	models.SaveTodayValue(status.EnergyToday)
-	monthTotal := models.GetMonthTotal()
+	p.DB().SaveTodayValue(status.EnergyToday)
+	monthTotal := p.DB().GetMonthTotal()
 	if status.EnergyMonth > monthTotal {
 		monthTotal = status.EnergyMonth
 	}
 	energyMonth.WithLabelValues(Site).Set(monthTotal)
-	yearTotal := models.GetYearTotal()
-	if status.EnergyMonth > yearTotal {
+	yearTotal := p.DB().GetYearTotal()
+	if status.EnergyYear > yearTotal {
 		yearTotal = status.EnergyYear
 	}
 	energyYear.WithLabelValues(Site).Set(yearTotal)
-	record_date, value := models.GetDayRecord()
+	record_date, value := p.DB().GetDayRecord()
+	dayRecord.DeleteLabelValues(Site)
 	dayRecord.WithLabelValues(Site, record_date).Set(value)
 	log.Printf("%s - Synchronized with database.\n", Site)
 	return nil
@@ -192,7 +192,12 @@ func main() {
 		if timeout == 0 {
 			timeout = cfg.Server.DefaultTimeout
 		}
-		provider := services.NewOmnikProvider(p.Site, p.BaseURL, p.Pid, timeout)
+		databaseFile := fmt.Sprintf("%s/%s.db", databaseDir, p.Site)
+		db, err := models.NewDB(databaseFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		provider := services.NewOmnikProvider(p.Site, p.BaseURL, p.Pid, timeout, db)
 		providers = append(providers, provider)
 	}
 
@@ -201,7 +206,12 @@ func main() {
 		if timeout == 0 {
 			timeout = cfg.Server.DefaultTimeout
 		}
-		provider := services.NewSolarEdgeProvider(p.Site, p.APIKey, p.Pid, timeout)
+		databaseFile := fmt.Sprintf("%s/%s.db", databaseDir, p.Site)
+		db, err := models.NewDB(databaseFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		provider := services.NewSolarEdgeProvider(p.Site, p.APIKey, p.Pid, timeout, db)
 		providers = append(providers, provider)
 	}
 
@@ -210,16 +220,13 @@ func main() {
 		if timeout == 0 {
 			timeout = cfg.Server.DefaultTimeout
 		}
-		provider := services.NewSemsProvider(p.Site, p.Account, p.Password, timeout)
-		providers = append(providers, provider)
-	}
-
-	for _, p := range providers {
-		databaseFile := fmt.Sprintf("%s/%s.db", databaseDir, p.Site())
-		err = models.InitDB(databaseFile)
+		databaseFile := fmt.Sprintf("%s/%s.db", databaseDir, p.Site)
+		db, err := models.NewDB(databaseFile)
 		if err != nil {
 			log.Fatal(err)
 		}
+		provider := services.NewSemsProvider(p.Site, p.Account, p.Password, timeout, db)
+		providers = append(providers, provider)
 	}
 
 	// Start Metrics Collection

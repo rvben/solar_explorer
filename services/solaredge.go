@@ -15,6 +15,7 @@ type SolarEdgeProvider struct {
 	api_key string
 	site    string
 	timeout int
+	db      *models.DataBase
 }
 
 func (p *SolarEdgeProvider) Site() string {
@@ -25,8 +26,12 @@ func (p *SolarEdgeProvider) Timeout() int {
 	return p.timeout
 }
 
-func NewSolarEdgeProvider(site, api_key, pid string, timeout int) *SolarEdgeProvider {
-	return &SolarEdgeProvider{site: site, pid: pid, api_key: api_key, timeout: timeout}
+func (p *SolarEdgeProvider) DB() *models.DataBase {
+	return p.db
+}
+
+func NewSolarEdgeProvider(site, api_key, pid string, timeout int, db *models.DataBase) *SolarEdgeProvider {
+	return &SolarEdgeProvider{site: site, pid: pid, api_key: api_key, timeout: timeout, db: db}
 }
 
 func (p *SolarEdgeProvider) GetSolarStatus() (*models.SolarStatus, error) {

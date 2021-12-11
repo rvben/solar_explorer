@@ -6,4 +6,5 @@ type SolarStatusProvider interface {
 	GetSolarStatus() (*models.SolarStatus, error)
 	Site() string
 	Timeout() int
+	DB() *models.DataBase
 }

@@ -21,6 +21,7 @@ type SemsProvider struct {
 	cookie   string
 	site     string
 	timeout  int
+	db       *models.DataBase
 }
 
 func (p *SemsProvider) Site() string {
@@ -31,8 +32,12 @@ func (p *SemsProvider) Timeout() int {
 	return p.timeout
 }
 
-func NewSemsProvider(site, user, password string, timeout int) *SemsProvider {
-	return &SemsProvider{site: site, user: user, password: password, timeout: timeout}
+func (p *SemsProvider) DB() *models.DataBase {
+	return p.db
+}
+
+func NewSemsProvider(site, user, password string, timeout int, db *models.DataBase) *SemsProvider {
+	return &SemsProvider{site: site, user: user, password: password, timeout: timeout, db: db}
 }
 
 func (p *SemsProvider) login() error {
