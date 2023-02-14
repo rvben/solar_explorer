@@ -1,4 +1,4 @@
-FROM golang:1.17.4
+FROM golang:1.19.5
 WORKDIR /app
 COPY . .
 RUN go get -d

@@ -14,10 +14,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var ACCOUNT = os.Getenv("SEMS_ACCOUNT")
-var PASSWORD = os.Getenv("SEMS_PASSWORD")
-var SITE = os.Getenv("SEMS_SITE")
-
 var (
 	powerNow = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -120,18 +116,19 @@ type Config struct {
 		Pid     string `yaml:"pid"`
 		Timeout int    `yaml:"timeout"`
 	} `yaml:"solaredge"`
-	Omnik []struct {
-		Site    string `yaml:"site"`
-		Pid     string `yaml:"pid"`
-		BaseURL string `yaml:"base_url"`
-		Timeout int    `yaml:"timeout"`
-	} `yaml:"omnik"`
 	Sems []struct {
 		Site     string `yaml:"site"`
 		Account  string `yaml:"account"`
 		Password string `yaml:"password"`
 		Timeout  int    `yaml:"timeout"`
 	} `yaml:"sems"`
+	Ginlong []struct {
+		Site     string `yaml:"site"`
+		Pid      string `yaml:"pid"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		Timeout  int    `yaml:"timeout"`
+	} `yaml:"ginlong"`
 }
 
 func NewConfig(configPath string) (*Config, error) {
@@ -187,7 +184,7 @@ func main() {
 	var providers []services.SolarStatusProvider
 
 	// Load all providers
-	for _, p := range cfg.Omnik {
+	for _, p := range cfg.Ginlong {
 		timeout := p.Timeout
 		if timeout == 0 {
 			timeout = cfg.Server.DefaultTimeout
@@ -197,7 +194,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		provider := services.NewOmnikProvider(p.Site, p.BaseURL, p.Pid, timeout, db)
+		if p.Pid == "" {
+			p.Pid = "172533"
+		}
+		provider := services.NewGinlongProvider(p.Site, p.Username, p.Password, p.Pid, timeout, db)
 		providers = append(providers, provider)
 	}
 

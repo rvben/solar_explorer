@@ -99,9 +99,9 @@ func (p *SemsProvider) GetSolarStatus() (*models.SolarStatus, error) {
 		Timeout: 60 * time.Second,
 	}
 
-	url := "https://www.semsportal.com/GopsApi/Post?s=v1/PowerStation/GetMonitorDetailByPowerstationId"
+	url := "https://www.semsportal.com/GopsApi/Post?s=v3/PowerStation/GetMonitorDetailByPowerstationId"
 	data := neturl.Values{}
-	data.Set("str", fmt.Sprintf("{\"api\":\"v1/PowerStation/GetMonitorDetailByPowerstationId\",\"param\":{\"powerStationId\":\"%s\"}}", p.token))
+	data.Set("str", fmt.Sprintf("{\"api\":\"v3/PowerStation/GetMonitorDetailByPowerstationId\",\"param\":{\"powerStationId\":\"%s\"}}", p.token))
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -124,28 +124,23 @@ func (p *SemsProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read body from request: %s", err)
 	}
-
 	rawStatus := struct {
-		Language string   `json:"language"`
-		Function []string `json:"function"`
-		HasError bool     `json:"hasError"`
-		Msg      string   `json:"msg"`
-		Code     string   `json:"code"`
+		Language string      `json:"language"`
+		Function interface{} `json:"function"`
+		HasError bool        `json:"hasError"`
+		Msg      string      `json:"msg"`
+		Code     string      `json:"code"`
 		Data     struct {
-			Inverter []struct {
-				IsStored    bool    `json:"is_stored"`
-				Name        string  `json:"name"`
-				InPac       float64 `json:"in_pac"`
-				OutPac      float64 `json:"out_pac"`
-				Eday        float64 `json:"eday"`
-				Emonth      float64 `json:"emonth"`
-				Etotal      float64 `json:"etotal"`
-				Status      int     `json:"status"`
-				TurnonTime  string  `json:"turnon_time"`
-				ReleationID string  `json:"releation_id"`
-				Type        string  `json:"type"`
-				Capacity    float64 `json:"capacity"`
-			}
+			Kpi struct {
+				MonthGeneration float64 `json:"month_generation"`
+				Pac             float64 `json:"pac"`
+				Power           float64 `json:"power"`
+				TotalPower      float64 `json:"total_power"`
+				DayIncome       float64 `json:"day_income"`
+				TotalIncome     float64 `json:"total_income"`
+				YieldRate       float64 `json:"yield_rate"`
+				Currency        string  `json:"currency"`
+			} `json:"kpi"`
 		}
 	}{}
 	json.Unmarshal(bodyBytes, &rawStatus)
@@ -154,10 +149,10 @@ func (p *SemsProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	}
 
 	d := rawStatus.Data
-	energyToday := d.Inverter[0].Eday * 1000   // Eday is in kW
-	energyMonth := d.Inverter[0].Emonth * 1000 // Emonth is in kW
-	energyTotal := d.Inverter[0].Etotal * 1000 // Etotal is in kW
-	powerNow := d.Inverter[0].OutPac           // OutPac is in W
+	energyToday := d.Kpi.Power * 1000           // Eday is in kW
+	energyMonth := d.Kpi.MonthGeneration * 1000 // Emonth is in kW
+	energyTotal := d.Kpi.TotalPower * 1000      // Etotal is in kW
+	powerNow := d.Kpi.Pac                       // Pac is in W
 	status := models.SolarStatus{EnergyToday: energyToday, EnergyMonth: energyMonth, EnergyTotal: energyTotal, PowerNow: powerNow}
 	return &status, nil
 }

@@ -23,14 +23,35 @@ func NewDB(dbPath string) (*DataBase, error) {
 
 	statement, _ := db.Prepare("CREATE TABLE IF NOT EXISTS daily (id INTEGER PRIMARY KEY, date TEXT UNIQUE, value REAL);")
 	statement.Exec()
-	// log.Printf("Initialized database at [%s]\n", dbPath)
+	log.Printf("Initialized database at [%s]\n", dbPath)
 	return &DataBase{DB: db, dbPath: dbPath}, db.Ping()
 }
 
 func (d *DataBase) SaveTodayValue(value float64) {
 	// log.Printf("Saving today value [%f] at [%s]\n", value, d.dbPath)
 	date := time.Now().Format("2006-01-02")
-	d.SaveDailyValue(date, value)
+	oldValue := d.GetDailyValue(date)
+	if value > oldValue {
+		d.SaveDailyValue(date, value)
+	}
+}
+
+func (d *DataBase) GetDailyValue(day string) float64 {
+	row, err := d.DB.Query(fmt.Sprintf("SELECT date, value FROM daily WHERE date = %s;", day))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer row.Close()
+	var value float64
+	if row.Next() {
+		err := row.Scan(&value)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		value = 0.0
+	}
+	return value
 }
 
 func (d *DataBase) SaveDailyValue(day string, value float64) {
