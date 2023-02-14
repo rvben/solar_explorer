@@ -10,8 +10,13 @@ import (
 )
 
 type DataBase struct {
-	DB     *sql.DB
-	dbPath string
+	DB        *sql.DB
+	dbPath    string
+	stmt      *sql.Stmt
+	getStmt   *sql.Stmt
+	dayStmt   *sql.Stmt
+	monthStmt *sql.Stmt
+	yearStmt  *sql.Stmt
 }
 
 func NewDB(dbPath string) (*DataBase, error) {
@@ -21,81 +26,143 @@ func NewDB(dbPath string) (*DataBase, error) {
 		return nil, err
 	}
 
-	statement, _ := db.Prepare("CREATE TABLE IF NOT EXISTS daily (id INTEGER PRIMARY KEY, date TEXT UNIQUE, value REAL);")
-	statement.Exec()
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	statement, _ := tx.Prepare("CREATE TABLE IF NOT EXISTS daily (id INTEGER PRIMARY KEY, date TEXT UNIQUE, value REAL);")
+	_, err = statement.Exec()
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return nil, err
+	}
+
 	log.Printf("Initialized database at [%s]\n", dbPath)
 	return &DataBase{DB: db, dbPath: dbPath}, db.Ping()
 }
 
-func (d *DataBase) SaveTodayValue(value float64) {
-	// log.Printf("Saving today value [%f] at [%s]\n", value, d.dbPath)
+func (d *DataBase) SaveTodayValue(value float64) error {
 	date := time.Now().Format("2006-01-02")
-	oldValue := d.GetDailyValue(date)
-	if value > oldValue {
-		d.SaveDailyValue(date, value)
-	}
-}
-
-func (d *DataBase) GetDailyValue(day string) float64 {
-	row, err := d.DB.Query(fmt.Sprintf("SELECT date, value FROM daily WHERE date = %s;", day))
+	oldValue, err := d.GetDailyValue(date)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer row.Close()
-	var value float64
-	if row.Next() {
-		err := row.Scan(&value)
+	if value != oldValue {
+		err = d.SaveDailyValue(date, value)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-	} else {
-		value = 0.0
 	}
-	return value
+	return nil
 }
 
-func (d *DataBase) SaveDailyValue(day string, value float64) {
-	statement, _ := d.DB.Prepare("INSERT INTO daily (date, value) VALUES (?,?) ON CONFLICT(date) DO UPDATE SET value=excluded.value;")
-	statement.Exec(day, value)
-}
+func (d *DataBase) GetDailyValue(day string) (float64, error) {
+	if d.dayStmt == nil {
+		var err error
+		d.dayStmt, err = d.DB.Prepare("SELECT value FROM daily WHERE date = ?;")
+		if err != nil {
+			return 0, err
+		}
+	}
 
-func (d *DataBase) GetDayRecord() (string, float64) {
-	row, err := d.DB.Query("SELECT date, value FROM daily WHERE value = (SELECT MAX(value) FROM daily);")
+	row := d.dayStmt.QueryRow(day)
+	var value float64
+	err := row.Scan(&value)
 	if err != nil {
-		log.Fatal(err)
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
 	}
-	defer row.Close()
+
+	return value, nil
+}
+
+func (d *DataBase) SaveDailyValue(day string, value float64) error {
+	tx, err := d.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if d.stmt == nil {
+		d.stmt, err = d.DB.Prepare("INSERT INTO daily (date, value) VALUES (?,?) ON CONFLICT(date) DO UPDATE SET value=excluded.value;")
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = d.stmt.Exec(day, value)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (d *DataBase) GetDayRecord() (string, float64, error) {
+	if d.getStmt == nil {
+		var err error
+		d.getStmt, err = d.DB.Prepare("SELECT date, value FROM daily WHERE value = (SELECT MAX(value) FROM daily);")
+		if err != nil {
+			return "", 0, err
+		}
+	}
+
+	row := d.getStmt.QueryRow()
 	var date string
 	var value float64
-	row.Next()
-	row.Scan(&date, &value)
-	return date, value
+	err := row.Scan(&date, &value)
+	if err == sql.ErrNoRows {
+		return "", 0, fmt.Errorf("no records found")
+	} else if err != nil {
+		return "", 0, err
+	}
+
+	return date, value, nil
 }
 
-func (d *DataBase) GetMonthTotal() float64 {
+func (d *DataBase) GetMonthTotal() (float64, error) {
 	month := time.Now().Format("2006-01")
-	row, err := d.DB.Query(fmt.Sprintf("SELECT SUM(value) FROM daily WHERE date LIKE '%s%%';", month))
-	if err != nil {
-		log.Fatal(err)
+	if d.monthStmt == nil {
+		var err error
+		d.monthStmt, err = d.DB.Prepare("SELECT COALESCE(SUM(value), 0) FROM daily WHERE date LIKE ?;")
+		if err != nil {
+			return 0, err
+		}
 	}
-	defer row.Close()
 
+	row := d.monthStmt.QueryRow(fmt.Sprintf("%s%%", month))
 	var value float64
-	row.Next()
-	row.Scan(&value)
-	return value
+	err := row.Scan(&value)
+	if err != nil {
+		return 0, err
+	}
+
+	return value, nil
 }
 
-func (d *DataBase) GetYearTotal() float64 {
+func (d *DataBase) GetYearTotal() (float64, error) {
 	year := time.Now().Format("2006")
-	row, err := d.DB.Query(fmt.Sprintf("SELECT SUM(value) FROM daily WHERE date LIKE '%s%%';", year))
-	if err != nil {
-		log.Fatal(err)
+	if d.yearStmt == nil {
+		var err error
+		d.yearStmt, err = d.DB.Prepare("SELECT COALESCE(SUM(value), 0) FROM daily WHERE date LIKE ?;")
+		if err != nil {
+			return 0, err
+		}
 	}
-	defer row.Close()
 
+	row := d.yearStmt.QueryRow(fmt.Sprintf("%s%%", year))
 	var value float64
-	row.Next()
-	row.Scan(&value)
-	return value
+	err := row.Scan(&value)
+	if err != nil {
+		return 0, err
+	}
+
+	return value, nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -75,19 +76,31 @@ func retrieveMetrics(p services.SolarStatusProvider) error {
 
 	log.Printf("%s - Synchronizing values with database.\n", Site)
 	p.DB().SaveTodayValue(status.EnergyToday)
-	monthTotal := p.DB().GetMonthTotal()
+	monthTotal, err := p.DB().GetMonthTotal()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if status.EnergyMonth > monthTotal {
 		monthTotal = status.EnergyMonth
 	}
 	energyMonth.WithLabelValues(Site).Set(monthTotal)
-	yearTotal := p.DB().GetYearTotal()
+
+	yearTotal, err := p.DB().GetYearTotal()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if status.EnergyYear > yearTotal {
 		yearTotal = status.EnergyYear
 	}
 	energyYear.WithLabelValues(Site).Set(yearTotal)
-	record_date, value := p.DB().GetDayRecord()
+
+	record_date, value, err := p.DB().GetDayRecord()
+	if err != nil {
+		log.Printf("Could not get DayRecord: %s", err)
+	}
 	dayRecord.DeleteLabelValues(Site)
 	dayRecord.WithLabelValues(Site, record_date).Set(value)
+
 	log.Printf("%s - Synchronized with database.\n", Site)
 	return nil
 }
@@ -139,8 +152,12 @@ func NewConfig(configPath string) (*Config, error) {
 	}
 	defer file.Close()
 
-	d := yaml.NewDecoder(file)
-	if err := d.Decode(&config); err != nil {
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
 
@@ -236,6 +253,6 @@ func main() {
 
 	// Start server
 	http.Handle("/metrics", promhttp.Handler())
-	log.Println(fmt.Sprintf("Starting server at :%s", cfg.Server.Port))
+	log.Printf("Starting server at :%s", cfg.Server.Port)
 	http.ListenAndServe(fmt.Sprintf(":%s", cfg.Server.Port), nil)
 }
