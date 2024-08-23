@@ -1,12 +1,19 @@
-{ config, lib, pkgs, solar_exporter, ... }:
+{ lib, pkgs, config, ... }:
 
-with lib;
+with lib;                      
 let
   cfg = config.services.solar_exporter;
 in {
   options = {
     services.solar_exporter = {
       enable = mkEnableOption "Solar Exporter service";
+
+      package = mkOption {
+        type = lib.types.package;
+        default = (pkgs.callPackage ../. {});
+        defaultText = lib.literalExpression "(pkgs.callPackage ../. {})";
+        description = "The solar_exporter package to use.";
+      };
 
       user = mkOption {
         type = types.str;
@@ -35,7 +42,7 @@ in {
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
-        ExecStart = "${solar_exporter}/bin/solar_exporter --config ${escapeShellArg cfg.configFile}";
+        ExecStart = "${cfg.package}/bin/solar_exporter --config ${escapeShellArg cfg.configFile}";
         Restart = "always";
         User = cfg.user;
         Group = cfg.group;
