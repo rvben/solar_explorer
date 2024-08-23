@@ -45,7 +45,15 @@
     defaultPackage.aarch64-darwin = self.packages.aarch64-darwin;
 
     nixosModules = {
-      solar_exporter = ./nixosModules/solar_exporter.nix;
+      solar_exporter = { pkgs, ... }: {
+        nixpkgs.overlays = [
+          (final: prev: {
+            solar_exporter = self.packages.${prev.system}.default;
+          })
+        ];
+
+        imports = [ ./nixosModules/solar_exporter.nix ];
+      };
     };
   };
 }

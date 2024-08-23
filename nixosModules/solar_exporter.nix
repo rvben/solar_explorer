@@ -10,8 +10,8 @@ in {
 
       package = mkOption {
         type = lib.types.package;
-        default = (pkgs.callPackage ../. {});
-        defaultText = lib.literalExpression "(pkgs.callPackage ../. {})";
+        default = pkgs.solar_exporter;
+        defaultText = lib.literalExpression "pkgs.solar_exporter";
         description = "The solar_exporter package to use.";
       };
 
