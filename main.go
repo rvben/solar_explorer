@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"flag"
@@ -65,12 +68,12 @@ var (
 func retrieveMetrics(p services.SolarStatusProvider) error {
 	Site := p.Site()
 
-	log.Printf("%s - Start retrieving status.\n", Site)
+	log.Printf("%s - Start retrieving status from provider %T.\n", Site, p)
 	status, err := p.GetSolarStatus()
 	if err != nil {
 		return err
 	}
-	log.Printf("%s - Successfully retrieved status.\n", Site)
+	log.Printf("%s - Successfully retrieved status from provider %T.\n", Site, p)
 
 	powerNow.WithLabelValues(Site).Set(status.PowerNow)
 	energyToday.WithLabelValues(Site).Set(status.EnergyToday)
@@ -80,7 +83,8 @@ func retrieveMetrics(p services.SolarStatusProvider) error {
 	p.DB().SaveTodayValue(status.EnergyToday)
 	monthTotal, err := p.DB().GetMonthTotal()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%s - Error retrieving month total: %s", Site, err)
+		return err
 	}
 	if status.EnergyMonth > monthTotal {
 		monthTotal = status.EnergyMonth
@@ -89,7 +93,8 @@ func retrieveMetrics(p services.SolarStatusProvider) error {
 
 	yearTotal, err := p.DB().GetYearTotal()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%s - Error retrieving year total: %s", Site, err)
+		return err
 	}
 	if status.EnergyYear > yearTotal {
 		yearTotal = status.EnergyYear
@@ -162,6 +167,15 @@ func NewConfig(configPath string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
+
+	// Validate configuration values
+	if config.Server.Port == "" {
+		return nil, fmt.Errorf("server port is required")
+	}
+	if config.Server.DbDir == "" {
+		return nil, fmt.Errorf("database directory is required")
+	}
+	// Add more validation as needed
 
 	return config, nil
 }
@@ -261,7 +275,25 @@ func main() {
 	}
 
 	// Start server
-	http.Handle("/metrics", promhttp.Handler())
-	log.Printf("Starting server at :%s", cfg.Server.Port)
-	http.ListenAndServe(fmt.Sprintf(":%s", cfg.Server.Port), nil)
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%s", cfg.Server.Port),
+		Handler: promhttp.Handler(),
+	}
+
+	go func() {
+		log.Printf("Starting server at :%s", cfg.Server.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Could not listen on %s: %v\n", cfg.Server.Port, err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	if err := server.Shutdown(context.Background()); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	log.Println("Server exiting")
 }

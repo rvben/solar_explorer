@@ -1,12 +1,14 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/rvben/solar_exporter/models"
 )
@@ -37,6 +39,9 @@ func NewGinlongProvider(site, username, password, pid string, timeout int, db *m
 }
 
 func (p *GinlongProvider) GetSolarStatus() (*models.SolarStatus, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(p.timeout)*time.Second)
+	defer cancel()
+
 	params := url.Values{}
 	params.Add("userName", p.username)
 	params.Add("userNameDisplay", p.username)
@@ -45,7 +50,7 @@ func (p *GinlongProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	params.Add("userType", `C`)
 	body := strings.NewReader(params.Encode())
 
-	req, err := http.NewRequest("POST", "https://m.ginlong.com/cpro/login/validateLogin.json", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://m.ginlong.com/cpro/login/validateLogin.json", body)
 	if err != nil {
 		// handle err
 	}
@@ -71,7 +76,7 @@ func (p *GinlongProvider) GetSolarStatus() (*models.SolarStatus, error) {
 	params.Add("plantId", p.pid)
 	body = strings.NewReader(params.Encode())
 
-	req, err = http.NewRequest("POST", "https://m.ginlong.com/cpro/epc/plantDetail/showPlantDetailAjax.json", body)
+	req, err = http.NewRequestWithContext(ctx, "POST", "https://m.ginlong.com/cpro/epc/plantDetail/showPlantDetailAjax.json", body)
 	if err != nil {
 		// handle err
 	}
@@ -197,7 +202,7 @@ func (p *GinlongProvider) GetSolarStatus() (*models.SolarStatus, error) {
 
 	jsonErr := json.Unmarshal(bodyBytes, &rawStatus)
 	if jsonErr != nil {
-		return nil, fmt.Errorf("failed to parse body to json: %s", err)
+		return nil, fmt.Errorf("failed to parse body to json: %s", jsonErr)
 	}
 
 	d := rawStatus
