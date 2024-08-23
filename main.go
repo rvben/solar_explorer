@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"flag"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -69,7 +71,7 @@ func retrieveMetrics(p services.SolarStatusProvider) error {
 		return err
 	}
 	log.Printf("%s - Successfully retrieved status.\n", Site)
-	// log.Printf("%s - STATUS:\n%+v\n----------\n", Site, status)
+
 	powerNow.WithLabelValues(Site).Set(status.PowerNow)
 	energyToday.WithLabelValues(Site).Set(status.EnergyToday)
 	energyTotal.WithLabelValues(Site).Set(status.EnergyTotal)
@@ -152,7 +154,7 @@ func NewConfig(configPath string) (*Config, error) {
 	}
 	defer file.Close()
 
-	data, err := ioutil.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +181,14 @@ func ValidateConfigPath(path string) error {
 }
 
 func main() {
-	cfg, err := NewConfig("config.yml")
+	configPath := flag.String("config", "config.yml", "path to config file")
+	flag.Parse()
+
+	if err := ValidateConfigPath(*configPath); err != nil {
+		log.Fatal(err)
+	}
+
+	cfg, err := NewConfig(*configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
