@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -198,11 +199,18 @@ func main() {
 	configPath := flag.String("config", "config.yml", "path to config file")
 	flag.Parse()
 
-	if err := ValidateConfigPath(*configPath); err != nil {
+	absConfigPath, err := filepath.Abs(*configPath)
+	if err != nil {
+		log.Fatalf("Could not determine absolute path for config file: %v", err)
+	}
+
+	log.Printf("Using configuration file: %s", absConfigPath) // Log the absolute config file path
+
+	if err := ValidateConfigPath(absConfigPath); err != nil {
 		log.Fatal(err)
 	}
 
-	cfg, err := NewConfig(*configPath)
+	cfg, err := NewConfig(absConfigPath)
 	if err != nil {
 		log.Fatal(err)
 	}
