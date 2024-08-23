@@ -10,7 +10,7 @@
       let
         commonDerivation = { pkgs, system }: pkgs.stdenv.mkDerivation {
           pname = "solar_exporter";
-          version = "1.0.0";
+          version = "1.0.1";
 
           src = ./.;
 
@@ -45,7 +45,7 @@
     defaultPackage.aarch64-darwin = self.packages.aarch64-darwin;
 
     nixosModules = {
-      solar_explorer = ./nixosModules/solar_explorer.nix;
+      solar_exporter = ./nixosModules/solar_exporter.nix;
     };
   };
 }
