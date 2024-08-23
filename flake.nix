@@ -14,7 +14,7 @@
 
           src = ./.;
 
-          buildInputs = [ pkgs.go ];
+          buildInputs = [ pkgs.go_1_23 ];
 
           buildPhase = ''
             export GOPATH=$TMPDIR/go-path
@@ -48,7 +48,7 @@
       solar_exporter = { pkgs, ... }: {
         nixpkgs.overlays = [
           (final: prev: {
-            solar_exporter = self.packages.${prev.system}.default;
+            solar_exporter = self.packages.${prev.system};
           })
         ];
 
